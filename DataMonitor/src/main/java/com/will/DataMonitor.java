@@ -1,14 +1,41 @@
 package com.will;
 
-import org.apache.zookeeper.KeeperException;
-import org.apache.zookeeper.WatchedEvent;
-import org.apache.zookeeper.Watcher;
-import org.apache.zookeeper.ZooKeeper;
+import org.apache.zookeeper.*;
+import org.apache.zookeeper.data.Stat;
+
+import java.util.Arrays;
 
 /**
  * Created by 11654 on 2016/9/3.
  */
-public class DataMonitor {
+public class DataMonitor implements Watcher, AsyncCallback.StatCallback {
+
+    ZooKeeper zk;
+
+    String znode;
+
+    Watcher chainedWatcher;
+
+    boolean dead;
+
+    DataMonitorListener listener;
+
+    byte prevData[];
+
+    public DataMonitor(ZooKeeper zk, String znode, Watcher chainedWatcher,
+                       DataMonitorListener listener) {
+        this.zk = zk;
+        this.znode = znode;
+        this.chainedWatcher = chainedWatcher;
+        this.listener = listener;
+        // Get things started by checking if the node exists. We are going
+        // to be completely event driven
+        zk.exists(znode, true, this, null);
+    }
+
+    /**
+     * Other classes use the DataMonitor by implementing this method
+     */
     public interface DataMonitorListener {
         /**
          * The existence status of the node has changed.
@@ -18,31 +45,14 @@ public class DataMonitor {
         /**
          * The ZooKeeper session is no longer valid.
          *
-         * @param rc
-         * the ZooKeeper reason code
+         * @param rc the ZooKeeper reason code
          */
         void closing(int rc);
     }
 
-    private ZooKeeper zk;
-    private String znode;
-    private Watcher chainedWatcher;
-    private DataMonitorListener listener;
-    public DataMonitor(ZooKeeper zk, String znode, Watcher chainedWatcher,
-                       DataMonitorListener listener) {
-        this.zk = zk;
-        this.znode = znode;
-        this.chainedWatcher = chainedWatcher;
-        this.listener = listener;
-
-        // Get things started by checking if the node exists. We are going
-        // to be completely event driven
-        zk.exists(znode, true, this, null);
-    }
-
     public void process(WatchedEvent event) {
         String path = event.getPath();
-        if (event.getType() == Watcher.Event.EventType.None) {
+        if (event.getType() == Event.EventType.None) {
             // We are are being told that the state of the
             // connection has changed
             switch (event.getState()) {
@@ -66,6 +76,47 @@ public class DataMonitor {
         }
         if (chainedWatcher != null) {
             chainedWatcher.process(event);
+        }
+    }
+
+    // The ZooKeeper.exists() completion callback, which happens to be the method StatCallback.processResult() implemented in the DataMonitor object,
+    // is invoked when the asynchronous "setting of the watch operation" (by ZooKeeper.exists()) completes on the server.
+    public void processResult(int rc, String path, Object ctx, Stat stat) {
+        boolean exists;
+        switch (rc) {
+            case KeeperException.Code.Ok:
+                exists = true;
+                break;
+            case KeeperException.Code.NoNode:
+                exists = false;
+                break;
+            case KeeperException.Code.SessionExpired:
+            case KeeperException.Code.NoAuth:
+                dead = true;
+                listener.closing(rc);
+                return;
+            default:
+                // Retry errors
+                zk.exists(znode, true, this, null);
+                return;
+        }
+
+        byte b[] = null;
+        if (exists) {
+            try {
+                b = zk.getData(znode, false, null);
+            } catch (KeeperException e) {
+                // We don't need to worry about recovering now. The watch
+                // callbacks will kick off any exception handling
+                e.printStackTrace();
+            } catch (InterruptedException e) {
+                return;
+            }
+        }
+        if ((b == null && b != prevData)
+                || (b != null && !Arrays.equals(prevData, b))) {
+            listener.exists(b);
+            prevData = b;
         }
     }
 }
