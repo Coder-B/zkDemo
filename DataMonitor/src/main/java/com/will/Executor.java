@@ -37,19 +37,19 @@ public class Executor implements Watcher, Runnable, DataMonitor.DataMonitorListe
     /**
      * @param args
      */
-    public static void main(String[] args) {
-        if (args.length < 4) {
-            System.err
-                    .println("USAGE: Executor hostPort znode filename program [args ...]");
-            System.exit(2);
-        }
-        String hostPort = args[0];
-        String znode = args[1];
-        String filename = args[2];
-        String exec[] = new String[args.length - 3];
-        System.arraycopy(args, 3, exec, 0, exec.length);
+    public static void main2(String[] args) {
+//        if (args.length < 4) {
+//            System.err
+//                    .println("USAGE: Executor hostPort znode filename program [args ...]");
+//            System.exit(2);
+//        }
+        String hostPort = "2182";//args[0];
+        String znode = "/znode1";// args[1];
+        String filename = "zk.out";//args[2];
+        String exec[] = new String[]{"",""};//new String[args.length - 3];
+        //System.arraycopy(args, 3, exec, 0, exec.length);
         try {
-            new Executor(hostPort, znode, filename, exec).run();
+            new Thread(new Executor(hostPort, znode, filename, exec)).start();
         } catch (Exception e) {
             e.printStackTrace();
         }
